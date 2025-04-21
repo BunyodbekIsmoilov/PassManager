@@ -18,17 +18,11 @@ func NewDB(path string) (*DB, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// Enable foreign key support
-	if _, err := conn.Exec("PRAGMA foreign_keys = ON"); err != nil {
-		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
-	}
-
-	// Create tables with improved schema
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS master_key (
 			id INTEGER PRIMARY KEY CHECK (id = 1),
 			salt BLOB NOT NULL,
-			hashed_key BLOB NOT NULL,
+			encrypted_check BLOB NOT NULL,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		);`,
@@ -40,7 +34,8 @@ func NewDB(path string) (*DB, error) {
 			notes BLOB,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (id) REFERENCES categories(id) ON DELETE SET NULL
+			category_id INTEGER,
+			FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
 		);`,
 		`CREATE TABLE IF NOT EXISTS categories (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,25 +59,25 @@ func (db *DB) Close() error {
 	return db.conn.Close()
 }
 
-func (db *DB) SaveMasterKey(salt, hashedKey []byte) error {
-	if len(salt) == 0 || len(hashedKey) == 0 {
+func (db *DB) SaveMasterKey(salt, encryptedCheck []byte) error {
+	if len(salt) == 0 || len(encryptedCheck) == 0 {
 		return errors.New("invalid key parameters")
 	}
 
 	_, err := db.conn.Exec(
 		`INSERT OR REPLACE INTO master_key 
-		(id, salt, hashed_key, updated_at) 
+		(id, salt, encrypted_check, updated_at) 
 		VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
-		1, salt, hashedKey,
+		1, salt, encryptedCheck,
 	)
 	return err
 }
 
 func (db *DB) GetMasterKey() ([]byte, []byte, error) {
-	var salt, hashedKey []byte
+	var salt, encryptedCheck []byte
 	err := db.conn.QueryRow(
-		"SELECT salt, hashed_key FROM master_key WHERE id = ?", 1,
-	).Scan(&salt, &hashedKey)
+		"SELECT salt, encrypted_check FROM master_key WHERE id = ?", 1,
+	).Scan(&salt, &encryptedCheck)
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -90,11 +85,11 @@ func (db *DB) GetMasterKey() ([]byte, []byte, error) {
 		}
 		return nil, nil, fmt.Errorf("failed to get master key: %w", err)
 	}
-	return salt, hashedKey, nil
+	return salt, encryptedCheck, nil
 }
 
-func (db *DB) AddEntry(website, username, encryptedPassword, notes []byte, categoryID *int) error {
-	if len(website) == 0 || len(username) == 0 || len(encryptedPassword) == 0 {
+func (db *DB) AddEntry(website, username string, encryptedPassword, notes []byte, categoryID *int) error {
+	if website == "" || username == "" || len(encryptedPassword) == 0 {
 		return errors.New("invalid entry parameters")
 	}
 
@@ -107,11 +102,30 @@ func (db *DB) AddEntry(website, username, encryptedPassword, notes []byte, categ
 	return err
 }
 
+func (db *DB) UpdateEntry(id int, website, username string, encryptedPassword, notes []byte, categoryID *int) error {
+	_, err := db.conn.Exec(
+		`UPDATE passwords SET 
+			website = ?, 
+			username = ?, 
+			encrypted_password = ?, 
+			notes = ?, 
+			category_id = ?,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?`,
+		website, username, encryptedPassword, notes, categoryID, id,
+	)
+	return err
+}
+
+func (db *DB) DeleteEntry(id int) error {
+	_, err := db.conn.Exec("DELETE FROM passwords WHERE id = ?", id)
+	return err
+}
+
 func (db *DB) GetAllEntries() ([]PasswordEntry, error) {
 	rows, err := db.conn.Query(
 		`SELECT id, website, username, encrypted_password, notes, category_id 
 		FROM passwords ORDER BY website`)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to query entries: %w", err)
 	}
@@ -142,15 +156,15 @@ func (db *DB) GetAllEntries() ([]PasswordEntry, error) {
 
 type PasswordEntry struct {
 	ID                int
-	Website           []byte
-	Username          []byte
+	Website           string
+	Username          string
 	EncryptedPassword []byte
 	Notes             []byte
 	CategoryID        *int
 }
 
 func (db *DB) AddCategory(name string) error {
-	if len(name) == 0 {
+	if name == "" {
 		return errors.New("category name cannot be empty")
 	}
 
@@ -161,7 +175,7 @@ func (db *DB) AddCategory(name string) error {
 func (db *DB) GetCategories() ([]Category, error) {
 	rows, err := db.conn.Query("SELECT id, name FROM categories ORDER BY name")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to query categories: %w", err)
 	}
 	defer rows.Close()
 
@@ -169,7 +183,7 @@ func (db *DB) GetCategories() ([]Category, error) {
 	for rows.Next() {
 		var c Category
 		if err := rows.Scan(&c.ID, &c.Name); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to scan category: %w", err)
 		}
 		categories = append(categories, c)
 	}

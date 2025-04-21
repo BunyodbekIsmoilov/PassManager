@@ -54,7 +54,7 @@ func Decrypt(ciphertext, key []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
-// GenerateSecureKey generates a cryptographically secure random key
+// GenerateSecureKey generates a cryptographically secure random key.
 func GenerateSecureKey(length int) ([]byte, error) {
 	key := make([]byte, length)
 	if _, err := rand.Read(key); err != nil {

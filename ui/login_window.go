@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"crypto/rand"
 	"fmt"
 	"spms/crypto"
 	"spms/db"
+	"spms/utils"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -18,8 +20,8 @@ func CreateLoginWindow(app fyne.App, db *db.DB) fyne.Window {
 	window.Resize(fyne.NewSize(500, 400))
 	window.SetFixedSize(true)
 
-	_, hashedKey, err := db.GetMasterKey()
-	isFirstTime := err != nil || len(hashedKey) == 0
+	_, encryptedCheck, err := db.GetMasterKey()
+	isFirstTime := err != nil || len(encryptedCheck) == 0
 
 	title := widget.NewLabel("Secure Password Manager")
 	title.TextStyle = fyne.TextStyle{Bold: true, Italic: true}
@@ -28,11 +30,14 @@ func CreateLoginWindow(app fyne.App, db *db.DB) fyne.Window {
 	passwordEntry := widget.NewPasswordEntry()
 	passwordEntry.SetPlaceHolder("Master Password")
 
-	// Fix: Declare button variable first
+	strengthLabel := widget.NewLabel("")
+	passwordEntry.OnChanged = func(text string) {
+		strength := utils.EvaluatePasswordStrength(text)
+		strengthLabel.SetText(fmt.Sprintf("Strength: %d%%", strength))
+	}
+
 	var visibilityBtn *widget.Button
 	showPassword := false
-
-	// Initialize button after declaration
 	visibilityBtn = widget.NewButtonWithIcon("", theme.VisibilityIcon(), func() {
 		showPassword = !showPassword
 		passwordEntry.Password = !showPassword
@@ -53,9 +58,10 @@ func CreateLoginWindow(app fyne.App, db *db.DB) fyne.Window {
 	form := container.NewVBox(
 		container.NewBorder(nil, nil, nil, visibilityBtn, passwordEntry),
 		confirmEntry,
+		strengthLabel,
 	)
 
-	loginBtn := widget.NewButton("Login", func() {
+	loginBtn := widget.NewButtonWithIcon("Login", theme.LoginIcon(), func() {
 		if isFirstTime {
 			if passwordEntry.Text != confirmEntry.Text {
 				dialog.ShowError(fmt.Errorf("passwords don't match"), window)
@@ -66,34 +72,58 @@ func CreateLoginWindow(app fyne.App, db *db.DB) fyne.Window {
 				return
 			}
 
-			salt, hashedKey, err := crypto.HashPassword(passwordEntry.Text, crypto.DefaultParams)
+			salt := make([]byte, crypto.DefaultParams.SaltLength)
+			if _, err := rand.Read(salt); err != nil {
+				dialog.ShowError(err, window)
+				return
+			}
+
+			key, err := crypto.DeriveKey(passwordEntry.Text, salt)
 			if err != nil {
 				dialog.ShowError(err, window)
 				return
 			}
-			if err := db.SaveMasterKey(salt, hashedKey); err != nil {
+			defer crypto.ClearBytes(key)
+
+			encryptedCheck, err := crypto.GetEncryptedCheck(key)
+			if err != nil {
 				dialog.ShowError(err, window)
 				return
 			}
+
+			if err := db.SaveMasterKey(salt, encryptedCheck); err != nil {
+				dialog.ShowError(err, window)
+				return
+			}
+
+			mainWindow := CreateMainWindow(app, db, key)
+			window.Close()
+			mainWindow.window.Show()
 		} else {
-			salt, storedKey, err := db.GetMasterKey()
+			salt, encryptedCheck, err := db.GetMasterKey()
 			if err != nil {
 				dialog.ShowError(err, window)
 				return
 			}
-			valid, err := crypto.VerifyPassword(passwordEntry.Text, salt, storedKey, crypto.DefaultParams)
-			if err != nil || !valid {
+			key, err := crypto.DeriveKey(passwordEntry.Text, salt)
+			if err != nil {
+				dialog.ShowError(err, window)
+				return
+			}
+			defer crypto.ClearBytes(key)
+
+			if !crypto.VerifyMasterKey(key, encryptedCheck) {
 				dialog.ShowError(fmt.Errorf("invalid master password"), window)
 				return
 			}
-		}
 
-		mainWindow := CreateMainWindow(app, db, passwordEntry.Text)
-		window.Close()
-		mainWindow.Show()
+			mainWindow := CreateMainWindow(app, db, key)
+			window.Close()
+			mainWindow.window.Show()
+		}
 	})
 
-	changePasswordBtn := widget.NewButton("Change Master Password", func() {
+	changePasswordBtn := widget.NewButtonWithIcon("Change Master Password", theme.SettingsIcon(), func() {
 		showChangePasswordDialog(window, db)
 	})
 	if isFirstTime {
@@ -104,6 +134,7 @@ func CreateLoginWindow(app fyne.App, db *db.DB) fyne.Window {
 		title,
 		layout.NewSpacer(),
 		form,
+		layout.NewSpacer(),
 		loginBtn,
 		changePasswordBtn,
 		layout.NewSpacer(),
@@ -118,6 +149,12 @@ func showChangePasswordDialog(parent fyne.Window, db *db.DB) {
 	newPass := widget.NewPasswordEntry()
 	confirmPass := widget.NewPasswordEntry()
 
+	strengthLabel := widget.NewLabel("")
+	newPass.OnChanged = func(text string) {
+		strength := utils.EvaluatePasswordStrength(text)
+		strengthLabel.SetText(fmt.Sprintf("Strength: %d%%", strength))
+	}
+
 	dialog.ShowCustom("Change Master Password", "Cancel",
 		container.NewVBox(
 			widget.NewLabel("Current Password:"),
@@ -126,15 +163,22 @@ func showChangePasswordDialog(parent fyne.Window, db *db.DB) {
 			newPass,
 			widget.NewLabel("Confirm New Password:"),
 			confirmPass,
-			widget.NewButton("Change", func() {
-				salt, storedKey, err := db.GetMasterKey()
+			strengthLabel,
+			widget.NewButtonWithIcon("Change", theme.ConfirmIcon(), func() {
+				salt, encryptedCheck, err := db.GetMasterKey()
 				if err != nil {
 					dialog.ShowError(err, parent)
 					return
 				}
 
-				valid, err := crypto.VerifyPassword(currentPass.Text, salt, storedKey, crypto.DefaultParams)
-				if err != nil || !valid {
+				oldKey, err := crypto.DeriveKey(currentPass.Text, salt)
+				if err != nil {
+					dialog.ShowError(err, parent)
+					return
+				}
+				defer crypto.ClearBytes(oldKey)
+
+				if !crypto.VerifyMasterKey(oldKey, encryptedCheck) {
 					dialog.ShowError(fmt.Errorf("current password is incorrect"), parent)
 					return
 				}
@@ -144,13 +188,52 @@ func showChangePasswordDialog(parent fyne.Window, db *db.DB) {
 					return
 				}
 
-				newSalt, newHashedKey, err := crypto.HashPassword(newPass.Text, crypto.DefaultParams)
+				if len(newPass.Text) < 16 {
+					dialog.ShowError(fmt.Errorf("new password must be at least 16 characters"), parent)
+					return
+				}
+
+				newSalt := make([]byte, crypto.DefaultParams.SaltLength)
+				if _, err := rand.Read(newSalt); err != nil {
+					dialog.ShowError(err, parent)
+					return
+				}
+
+				newKey, err := crypto.DeriveKey(newPass.Text, newSalt)
+				if err != nil {
+					dialog.ShowError(err, parent)
+					return
+				}
+				defer crypto.ClearBytes(newKey)
+
+				newEncryptedCheck, err := crypto.GetEncryptedCheck(newKey)
 				if err != nil {
 					dialog.ShowError(err, parent)
 					return
 				}
 
-				if err := db.SaveMasterKey(newSalt, newHashedKey); err != nil {
+				entries, err := db.GetAllEntries()
+				if err != nil {
+					dialog.ShowError(err, parent)
+					return
+				}
+
+				for _, entry := range entries {
+					decrypted, err := crypto.Decrypt(entry.EncryptedPassword, oldKey)
+					if err != nil {
+						continue // Skip failed decryptions
+					}
+					newEncrypted, err := crypto.Encrypt(decrypted, newKey)
+					if err != nil {
+						continue // Skip failed encryptions
+					}
+					err = db.UpdateEntry(entry.ID, entry.Website, entry.Username, newEncrypted, entry.Notes, entry.CategoryID)
+					if err != nil {
+						continue // Skip failed updates
+					}
+				}
+
+				if err := db.SaveMasterKey(newSalt, newEncryptedCheck); err != nil {
 					dialog.ShowError(err, parent)
 					return
 				}

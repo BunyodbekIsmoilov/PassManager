@@ -42,9 +42,8 @@ func GeneratePassword(config GeneratorConfig) (string, error) {
 		password[i] = charset[idx.Int64()]
 	}
 
-	// Ensure password meets complexity requirements
 	if !meetsComplexity(string(password), config) {
-		return GeneratePassword(config) // Retry if complexity not met
+		return GeneratePassword(config)
 	}
 
 	return string(password), nil
@@ -85,7 +84,6 @@ func EvaluatePasswordStrength(password string) int {
 	}
 
 	score := 0
-	// Length score (max 40 points)
 	switch {
 	case len(password) >= 16:
 		score += 40
@@ -97,7 +95,6 @@ func EvaluatePasswordStrength(password string) int {
 		score += 10
 	}
 
-	// Character diversity (max 60 points)
 	var hasLower, hasUpper, hasDigit, hasSymbol bool
 	for _, c := range password {
 		switch {
@@ -125,7 +122,6 @@ func EvaluatePasswordStrength(password string) int {
 		score += 10
 	}
 
-	// Bonus for multiple character types
 	types := 0
 	if hasLower {
 		types++
@@ -149,14 +145,12 @@ func EvaluatePasswordStrength(password string) int {
 		score += 30
 	}
 
-	// Deduct for consecutive repeated characters
 	for i := 0; i < len(password)-1; i++ {
 		if password[i] == password[i+1] {
 			score -= 5
 		}
 	}
 
-	// Ensure score is within bounds
 	if score < 0 {
 		return 0
 	}
