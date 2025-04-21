@@ -28,8 +28,12 @@ func CreateLoginWindow(app fyne.App, db *db.DB) fyne.Window {
 	passwordEntry := widget.NewPasswordEntry()
 	passwordEntry.SetPlaceHolder("Master Password")
 
+	// Fix: Declare button variable first
+	var visibilityBtn *widget.Button
 	showPassword := false
-	visibilityBtn := widget.NewButtonWithIcon("", theme.VisibilityIcon(), func() {
+
+	// Initialize button after declaration
+	visibilityBtn = widget.NewButtonWithIcon("", theme.VisibilityIcon(), func() {
 		showPassword = !showPassword
 		passwordEntry.Password = !showPassword
 		if showPassword {
