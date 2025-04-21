@@ -20,27 +20,27 @@ func NewDB(path string) (*DB, error) {
 
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS master_key (
-			id INTEGER PRIMARY KEY CHECK (id = 1),
-			salt BLOB NOT NULL,
-			encrypted_check BLOB NOT NULL,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);`,
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            salt BLOB NOT NULL,
+            encrypted_check BLOB NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );`,
 		`CREATE TABLE IF NOT EXISTS passwords (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			website TEXT NOT NULL,
-			username TEXT NOT NULL,
-			encrypted_password BLOB NOT NULL,
-			notes BLOB,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			category_id INTEGER,
-			FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
-		);`,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            website TEXT NOT NULL,
+            username TEXT NOT NULL,
+            encrypted_password BLOB NOT NULL,
+            notes BLOB,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            category_id INTEGER,
+            FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
+        );`,
 		`CREATE TABLE IF NOT EXISTS categories (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name TEXT NOT NULL UNIQUE
-		);`,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE
+        );`,
 	}
 
 	for _, query := range queries {
