@@ -125,7 +125,6 @@ func showPasswordDetails(parent fyne.Window, db *db.DB, key []byte, entry db.Pas
 			widget.NewLabel("Password:"),
 			container.NewHBox(
 				passwordEntry,
-				visibilityBtn,
 				widget.NewButtonWithIcon("", theme.ContentCopyIcon(), func() {
 					parent.Clipboard().SetContent(string(decrypted))
 				}),
@@ -192,7 +191,7 @@ func showAddPasswordDialog(parent fyne.Window, db *db.DB, key []byte, onSuccess 
 	formItems := []*widget.FormItem{
 		widget.NewFormItem("Website", website),
 		widget.NewFormItem("Username", username),
-		widget.NewFormItem("Password", container.NewHBox(password, visibilityBtn)),
+		widget.NewFormItem("Password", container.NewHBox(password)),
 		widget.NewFormItem("Category", categorySelect),
 		widget.NewFormItem("", strengthLabel),
 	}
@@ -299,7 +298,7 @@ func showEditPasswordDialog(parent fyne.Window, db *db.DB, key []byte, entry db.
 	formItems := []*widget.FormItem{
 		widget.NewFormItem("Website", website),
 		widget.NewFormItem("Username", username),
-		widget.NewFormItem("Password", container.NewHBox(password, visibilityBtn)),
+		widget.NewFormItem("Password", container.NewHBox(password)),
 		widget.NewFormItem("Category", categorySelect),
 		widget.NewFormItem("", strengthLabel),
 	}

@@ -56,7 +56,7 @@ func CreateLoginWindow(app fyne.App, db *db.DB) fyne.Window {
 	}
 
 	form := container.NewVBox(
-		container.NewBorder(nil, nil, nil, visibilityBtn, passwordEntry),
+		container.NewBorder(nil, nil, nil, nil, passwordEntry),
 		confirmEntry,
 		strengthLabel,
 	)
